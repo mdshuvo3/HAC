@@ -3,53 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 Dual-Mode Audio Controller</title>
+  <title>ESP32 Dual-Audio & Config Streamer</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     :root {
       --bg: #0f172a;
       --card-bg: #1e293b;
-      --accent: #3b82f6;
-      --accent-danger: #ef4444;
+      --accent-blue: #2563eb;
+      --accent-purple: #7c3aed;
+      --accent-danger: #dc2626;
       --text: #f8fafc;
       --text-muted: #94a3b8;
-      --disabled: #475569;
+      --border: #334155;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
     body { background-color: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 1rem; }
-    .container { background-color: var(--card-bg); width: 100%; max-width: 420px; border-radius: 1.5rem; padding: 1.5rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    .container { background-color: var(--card-bg); width: 100%; max-width: 400px; border-radius: 1.5rem; padding: 1.5rem; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
     
-    .status-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; font-size: 0.875rem; color: var(--text-muted); }
+    .status-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; font-size: 0.875rem; color: var(--text-muted); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background-color: #ef4444; display: inline-block; margin-right: 6px; }
     .dot.online { background-color: #10b981; }
 
-    .search-box { margin-bottom: 1.25rem; }
-    input[type="text"] { width: 100%; padding: 0.8rem; border-radius: 0.75rem; border: 1px solid #334155; background: #0f172a; color: var(--text); font-size: 0.95rem; margin-bottom: 0.5rem; outline: none; }
-    input[type="text"]:disabled { opacity: 0.5; cursor: not-allowed; }
+    .main-controls { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem; }
+    
+    /* Big Streaming Buttons */
+    .btn-big {
+      width: 100%;
+      padding: 1.2rem;
+      border-radius: 1rem;
+      border: none;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: white;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      transition: transform 0.1s, opacity 0.2s, background-color 0.2s;
+    }
+    .btn-big:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-big:not(:disabled):active { transform: scale(0.98); }
+    
+    .btn-system { background-color: var(--accent-blue); }
+    .btn-mic { background-color: var(--accent-purple); }
+    .btn-big.active { background-color: var(--accent-danger) !important; animation: pulse 1.5s infinite; }
 
-    .track-info { text-align: center; margin-bottom: 1.25rem; }
-    .track-title { font-size: 1.15rem; font-weight: 700; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 0.25rem; }
-    .track-status { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    /* Experimental Small Wi-Fi Config Button */
+    .exp-section { border-top: 1px solid var(--border); padding-top: 1rem; display: flex; justify-content: flex-end; }
+    .btn-small { background: transparent; border: 1px solid var(--border); color: var(--text-muted); padding: 0.4rem 0.8rem; border-radius: 0.5rem; font-size: 0.75rem; cursor: pointer; }
+    .btn-small:hover { border-color: var(--text-muted); color: var(--text); }
 
-    .controls { display: flex; justify-content: center; align-items: center; gap: 1rem; margin-bottom: 1.25rem; }
-    .btn { background-color: #334155; border: none; color: var(--text); width: 48px; height: 48px; border-radius: 50%; display: flex; justify-content: center; align-items: center; cursor: pointer; transition: background 0.2s, transform 0.1s; }
-    .btn:disabled { background-color: #1e293b; color: var(--disabled); cursor: not-allowed; opacity: 0.5; }
-    .btn:not(:disabled):active { transform: scale(0.95); }
-    .btn-main { background-color: var(--accent); width: 60px; height: 60px; }
-    .btn-submit { width: 100%; border-radius: 0.75rem; height: 44px; font-weight: bold; background: var(--accent); }
-
-    .slider-group { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.25rem; }
-    input[type="range"] { flex: 1; accent-color: var(--accent); cursor: pointer; }
-    input[type="range"]:disabled { opacity: 0.4; cursor: not-allowed; }
-
-    .live-call-section { border-top: 1px solid #334155; padding-top: 1.25rem; text-align: center; }
-    .btn-call { background-color: #334155; width: 100%; border-radius: 0.75rem; height: 48px; font-weight: 600; font-size: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
-    .btn-call.active { background-color: var(--accent-danger); animation: pulse 1.5s infinite; }
+    /* Wi-Fi Modal */
+    .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; z-index: 100; }
+    .modal.show { display: flex; }
+    .modal-card { background: var(--card-bg); padding: 1.5rem; border-radius: 1rem; width: 90%; max-width: 320px; text-align: left; }
+    .modal-card h3 { margin-bottom: 1rem; font-size: 1.1rem; }
+    .modal-card input { width: 100%; padding: 0.75rem; margin-bottom: 0.75rem; border-radius: 0.5rem; border: 1px solid var(--border); background: #0f172a; color: white; }
+    .modal-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
 
     @keyframes pulse {
       0% { opacity: 1; }
-      50% { opacity: 0.7; }
+      50% { opacity: 0.75; }
       100% { opacity: 1; }
     }
   </style>
@@ -57,79 +73,58 @@
 <body>
 
 <div class="container">
-  <!-- Status Bar -->
+  <!-- Status Header -->
   <div class="status-bar">
     <div><span id="status-dot" class="dot"></span><span id="status-text">ESP32 Offline</span></div>
-    <div id="mode-badge" style="font-weight: bold; color: #3b82f6;">URL Stream Mode</div>
+    <div id="mode-badge" style="font-weight: bold; color: var(--text-muted);">Idle</div>
   </div>
 
-  <!-- Track Information -->
-  <div class="track-info">
-    <div id="song-title" class="track-title">Waiting for Hardware...</div>
-    <div id="play-status" class="track-status">Disconnected</div>
-  </div>
-
-  <!-- MODE 1: Music URL Streaming UI -->
-  <div class="search-box">
-    <input type="text" id="songQuery" placeholder="Paste YouTube link or song name..." disabled>
-    <button class="btn btn-submit" id="submit-btn" onclick="playSong()" disabled>Play Track</button>
-  </div>
-
-  <div class="controls">
-    <button class="btn" id="prev-btn" onclick="sendCmd('prev')" title="Previous" disabled>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+  <!-- Main 2 Action Buttons -->
+  <div class="main-controls">
+    <button id="sys-btn" class="btn-big btn-system" onclick="toggleStream('system')" disabled>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+      <span id="sys-text">Stream System Audio</span>
     </button>
-    <button class="btn btn-main" id="play-btn" onclick="togglePlay()" title="Play/Pause" disabled>
-      <svg id="play-icon" width="28" height="28" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-    </button>
-    <button class="btn" id="next-btn" onclick="sendCmd('next')" title="Next" disabled>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+
+    <button id="mic-btn" class="btn-big btn-mic" onclick="toggleStream('mic')" disabled>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+      <span id="mic-text">Stream Phone Mic</span>
     </button>
   </div>
 
-  <div class="slider-group">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="#94a3b8"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
-    <input type="range" id="volume-slider" min="0" max="100" value="70" onchange="setVolume(this.value)" disabled>
-    <span id="vol-val" style="width: 32px; font-size: 0.85rem; color: var(--text-muted)">70%</span>
+  <!-- Experimental Wi-Fi Settings Toggle -->
+  <div class="exp-section">
+    <button class="btn-small" onclick="toggleModal(true)">(Experimental) Update Wi-Fi</button>
   </div>
+</div>
 
-  <!-- MODE 2: Live System Audio Stream UI -->
-  <div class="live-call-section">
-    <button id="call-btn" class="btn btn-call" onclick="toggleSystemAudioStream()" disabled>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-      <span id="call-text">Stream Phone System Audio</span>
-    </button>
+<!-- Wi-Fi Config Modal -->
+<div id="wifi-modal" class="modal">
+  <div class="modal-card">
+    <h3>Update ESP32 Wi-Fi</h3>
+    <input type="text" id="new-ssid" placeholder="New Wi-Fi SSID">
+    <input type="password" id="new-pass" placeholder="New Wi-Fi Password">
+    <div class="modal-actions">
+      <button class="btn-small" onclick="toggleModal(false)">Cancel</button>
+      <button class="btn-small" style="background: var(--accent-blue); color: white;" onclick="sendWifiUpdate()">Save & Reboot ESP</button>
+    </div>
   </div>
 </div>
 
 <script>
-  // Shared MQTT Topics
   const mqttCmdTopic = "my_client_home_system_1234/command";
   const mqttStatusTopic = "my_client_home_system_1234/status";
   const mqttAudioTopic = "my_client_home_system_1234/audio";
-  
-  const pipedInstances = [
-    "https://pipedapi.kavin.rocks",
-    "https://pipedapi.leptons.xyz",
-    "https://pipedapi.mha.fi",
-    "https://api.piped.yt"
-  ];
 
-  // Port 8884 WSS Connection for HiveMQ
   const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
   let esp32Online = false;
-  let isPlaying = false;
-  let isStreamingSystemAudio = false;
+  let activeMode = null; // 'system', 'mic', or null
   let audioContext = null;
   let mediaStream = null;
   let scriptProcessor = null;
 
-  const playIcon = '<path d="M8 5v14l11-7z"/>';
-  const pauseIcon = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
-
   client.on('connect', () => {
-    console.log("Connected to HiveMQ WebSocket!");
     client.subscribe(mqttStatusTopic);
     client.publish(mqttCmdTopic, JSON.stringify({ action: "get_status" }));
   });
@@ -145,185 +140,129 @@
 
   function setHardwareState(online) {
     esp32Online = online;
-    const dot = document.getElementById('status-dot');
-    const text = document.getElementById('status-text');
-    const title = document.getElementById('song-title');
-    const playStatus = document.getElementById('play-status');
-
-    const inputs = ['songQuery', 'submit-btn', 'prev-btn', 'play-btn', 'next-btn', 'volume-slider', 'call-btn'];
-
+    document.getElementById('status-dot').className = `dot ${online ? 'online' : ''}`;
+    document.getElementById('status-text').innerText = online ? 'ESP32 Online' : 'ESP32 Offline';
+    
     if (online) {
-      dot.classList.add('online');
-      text.innerText = 'ESP32 Online';
-      if (title.innerText === 'Waiting for Hardware...') {
-        title.innerText = 'No Track Selected';
-        playStatus.innerText = 'Ready';
-      }
-      inputs.forEach(id => document.getElementById(id).removeAttribute('disabled'));
+      document.getElementById('sys-btn').removeAttribute('disabled');
+      document.getElementById('mic-btn').removeAttribute('disabled');
     } else {
-      dot.classList.remove('online');
-      text.innerText = 'ESP32 Offline';
-      title.innerText = 'Waiting for Hardware...';
-      playStatus.innerText = 'Disconnected';
-      inputs.forEach(id => document.getElementById(id).setAttribute('disabled', 'true'));
+      document.getElementById('sys-btn').setAttribute('disabled', 'true');
+      document.getElementById('mic-btn').setAttribute('disabled', 'true');
+      if (activeMode) stopStreaming();
     }
   }
 
-  function sendCmd(action, value = null) {
+  async function toggleStream(mode) {
     if (!esp32Online) return;
-    const payload = JSON.stringify({ action: action, value: value });
-    client.publish(mqttCmdTopic, payload);
-  }
 
-  // --- MODE 1: URL MUSIC SYSTEM LOGIC ---
-  function togglePlay() {
-    isPlaying = !isPlaying;
-    document.getElementById('play-icon').innerHTML = isPlaying ? pauseIcon : playIcon;
-    document.getElementById('play-status').innerText = isPlaying ? 'Playing' : 'Paused';
-    sendCmd(isPlaying ? 'resume' : 'pause');
-  }
-
-  function setVolume(val) {
-    document.getElementById('vol-val').innerText = val + '%';
-    sendCmd('volume', parseInt(val));
-  }
-
-  function extractVideoId(input) {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=|shorts\/)([^#&?]*).*/;
-    const match = input.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
-  }
-
-  async function fetchFromPiped(endpoint) {
-    for (const baseUrl of pipedInstances) {
-      try {
-        let res = await fetch(`${baseUrl}${endpoint}`);
-        if (res.ok) return await res.json();
-      } catch (e) {}
-
-      try {
-        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(baseUrl + endpoint)}`;
-        let res = await fetch(proxyUrl);
-        if (res.ok) return await res.json();
-      } catch (e) {}
+    if (activeMode === mode) {
+      stopStreaming();
+    } else {
+      if (activeMode) stopStreaming();
+      await startStreaming(mode);
     }
-    throw new Error("All available Piped instances failed.");
   }
 
-  async function playSong() {
-    if (!esp32Online) return;
-    const input = document.getElementById('songQuery').value.trim();
-    if (!input) return alert("Enter a song name or paste a YouTube URL!");
-
-    document.getElementById('play-status').innerText = "Resolving track...";
-    let videoId = extractVideoId(input);
-
+  async function startStreaming(mode) {
     try {
-      if (!videoId) {
-        let data = await fetchFromPiped(`/search?q=${encodeURIComponent(input)}&filter=music_songs`);
-        if (!data.items || data.items.length === 0) return alert("No song found.");
-        videoId = data.items[0].url.split("v=")[1];
+      if (mode === 'system') {
+        mediaStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true,
+          audio: { echoCancellation: false, noiseSuppression: false }
+        });
+        if (mediaStream.getAudioTracks().length === 0) {
+          mediaStream.getTracks().forEach(t => t.stop());
+          return alert("System audio stream failed! Make sure 'Share Audio' is enabled.");
+        }
+      } else {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
       }
 
-      let streamData = await fetchFromPiped(`/streams/${videoId}`);
-      let m4aStreams = streamData.audioStreams.filter(s => s.format === "M4A" || s.mimeType.includes("audio/mp4"));
-      let targetStreams = m4aStreams.length > 0 ? m4aStreams : streamData.audioStreams;
-      targetStreams.sort((a, b) => a.bitrate - b.bitrate);
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
 
-      const streamUrl = targetStreams[0].url;
-      document.getElementById('song-title').innerText = streamData.title;
-      document.getElementById('play-status').innerText = "Playing URL Stream";
-      isPlaying = true;
-      document.getElementById('play-icon').innerHTML = pauseIcon;
+      scriptProcessor.onaudioprocess = (e) => {
+        if (!activeMode) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          let s = Math.max(-1, Math.min(1, inputData[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        client.publish(mqttAudioTopic, new Uint8Array(pcm16.buffer), { qos: 0 });
+      };
 
-      sendCmd('play', streamUrl);
+      source.connect(scriptProcessor);
+      scriptProcessor.connect(audioContext.destination);
+
+      activeMode = mode;
+      updateUI();
+
+      client.publish(mqttCmdTopic, JSON.stringify({ action: "mode", value: mode }));
 
     } catch (err) {
       console.error(err);
-      alert("Error resolving stream link.");
-      document.getElementById('play-status').innerText = "Error";
+      alert("Could not start stream. Permissions denied or unsupported.");
     }
   }
 
-  // --- MODE 2: SYSTEM AUDIO STREAM LOGIC ---
-  async function toggleSystemAudioStream() {
-    if (!esp32Online) return;
-    const callBtn = document.getElementById('call-btn');
-    const callText = document.getElementById('call-text');
-    const modeBadge = document.getElementById('mode-badge');
+  function stopStreaming() {
+    if (scriptProcessor) scriptProcessor.disconnect();
+    if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+    if (audioContext) audioContext.close();
 
-    if (!isStreamingSystemAudio) {
-      try {
-        // Request System / Screen / Tab Audio capture
-        mediaStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true, // Required by specification for getDisplayMedia
-          audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-          }
-        });
+    activeMode = null;
+    updateUI();
+    client.publish(mqttCmdTopic, JSON.stringify({ action: "mode", value: "idle" }));
+  }
 
-        // Verify user selected an audio track in the prompt
-        const audioTracks = mediaStream.getAudioTracks();
-        if (audioTracks.length === 0) {
-          mediaStream.getTracks().forEach(t => t.stop());
-          return alert("System audio stream failed! Make sure to check the 'Share Audio' option in the prompt.");
-        }
+  function updateUI() {
+    const sysBtn = document.getElementById('sys-btn');
+    const micBtn = document.getElementById('mic-btn');
+    const badge = document.getElementById('mode-badge');
 
-        // Downsample System Audio stream to 8,000 Hz 16-bit PCM for low bitrate (~128kbps)
-        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
-        const source = audioContext.createMediaStreamSource(mediaStream);
-        scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+    sysBtn.classList.remove('active');
+    micBtn.classList.remove('active');
+    document.getElementById('sys-text').innerText = "Stream System Audio";
+    document.getElementById('mic-text').innerText = "Stream Phone Mic";
 
-        scriptProcessor.onaudioprocess = (e) => {
-          if (!isStreamingSystemAudio) return;
-
-          const inputData = e.inputBuffer.getChannelData(0);
-          const pcm16 = new Int16Array(inputData.length);
-
-          for (let i = 0; i < inputData.length; i++) {
-            let s = Math.max(-1, Math.min(1, inputData[i]));
-            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-          }
-
-          // Publish system audio binary PCM frames over MQTT
-          client.publish(mqttAudioTopic, new Uint8Array(pcm16.buffer), { qos: 0 });
-        };
-
-        source.connect(scriptProcessor);
-        scriptProcessor.connect(audioContext.destination);
-
-        // Auto stop if user clicks browser "Stop Sharing" floating toolbar
-        mediaStream.getVideoTracks()[0].onended = () => {
-          if (isStreamingSystemAudio) toggleSystemAudioStream();
-        };
-
-        // Notify ESP32 to switch mode
-        sendCmd('mode', 'system_audio');
-
-        isStreamingSystemAudio = true;
-        callBtn.classList.add('active');
-        callText.innerText = 'Stop System Audio Stream';
-        modeBadge.innerText = 'System Audio Mode';
-        modeBadge.style.color = '#ef4444';
-
-      } catch (err) {
-        alert("System Audio Capture was canceled or is unsupported on this browser.");
-        console.error(err);
-      }
+    if (activeMode === 'system') {
+      sysBtn.classList.add('active');
+      document.getElementById('sys-text').innerText = "Stop System Stream";
+      badge.innerText = "System Mode";
+      badge.style.color = "#2563eb";
+    } else if (activeMode === 'mic') {
+      micBtn.classList.add('active');
+      document.getElementById('mic-text').innerText = "Stop Mic Stream";
+      badge.innerText = "Mic Mode";
+      badge.style.color = "#7c3aed";
     } else {
-      if (scriptProcessor) scriptProcessor.disconnect();
-      if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
-      if (audioContext) audioContext.close();
+      badge.innerText = "Idle";
+      badge.style.color = "#94a3b8";
+    }
+  }
 
-      sendCmd('mode', 'url_stream');
+  function toggleModal(show) {
+    document.getElementById('wifi-modal').classList.toggle('show', show);
+  }
 
-      isStreamingSystemAudio = false;
-      callBtn.classList.remove('active');
-      callText.innerText = 'Stream Phone System Audio';
-      modeBadge.innerText = 'URL Stream Mode';
-      modeBadge.style.color = '#3b82f6';
+  function sendWifiUpdate() {
+    const ssid = document.getElementById('new-ssid').value.trim();
+    const pass = document.getElementById('new-pass').value.trim();
+    if (!ssid) return alert("SSID cannot be empty!");
+
+    if (confirm("Send new Wi-Fi credentials? ESP32 will attempt to reboot and connect.")) {
+      client.publish(mqttCmdTopic, JSON.stringify({
+        action: "update_wifi",
+        ssid: ssid,
+        pass: pass
+      }));
+      toggleModal(false);
+      alert("Credentials sent!");
     }
   }
 </script>
