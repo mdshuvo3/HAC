@@ -118,10 +118,13 @@
 
   const options = {
   protocol: 'wss',
-  hostname: 'broker.hivemq.com',
-  port: 8884, // Use 8884 for secure WebSockets on HiveMQ public broker
-  path: '/mqtt'
+  hostname: 'broker.hivemq.com', // 'host' also works in MQTT.js
+  port: 8884,
+  path: '/mqtt',
+  clientId: 'web_client_' + Math.random().toString(16).substring(2, 8) // Prevents client ID collisions
 };
+
+const client = mqtt.connect(options);
 
   let esp32Online = false;
   let activeMode = null; // 'system', 'mic', or null
