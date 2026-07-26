@@ -57,7 +57,7 @@
   </div>
 
   <div class="exp-section">
-    <button id="exp-btn" class="btn-small" onclick="toggleModal(true)" disabled>(Experimental) Update Wi-Fi</button>
+    <button id="exp-btn" class="btn-small" onclick="toggleModal(true)" disabled>Update Wi-Fi</button>
   </div>
 </div>
 
@@ -205,7 +205,6 @@
   function stopStreaming() {
     activeMode = null; 
     
-    // Clean hardware-friendly stop (No hacky queue-nuking needed)
     if (pcmWorklet) {
       pcmWorklet.port.onmessage = null; 
       pcmWorklet.disconnect();
