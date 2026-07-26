@@ -116,7 +116,12 @@
   const mqttStatusTopic = "my_client_home_system_1234/status";
   const mqttAudioTopic = "my_client_home_system_1234/audio";
 
-  const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
+  const client = mqtt.connect('wss://broker.hivemq.com', {
+  port: 8884,
+  path: '/mqtt',
+  protocol: 'wss',
+  clientId: 'web_client_' + Math.random().toString(16).substr(2, 8)
+});
 
   let esp32Online = false;
   let activeMode = null; // 'system', 'mic', or null
