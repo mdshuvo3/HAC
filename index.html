@@ -116,7 +116,12 @@
   const mqttStatusTopic = "my_client_home_system_1234/status";
   const mqttAudioTopic = "my_client_home_system_1234/audio";
 
-  const client = mqtt.connect('ws://broker.hivemq.com:8000/mqtt');
+  const options = {
+  protocol: 'wss',
+  hostname: 'broker.hivemq.com',
+  port: 8884, // Use 8884 for secure WebSockets on HiveMQ public broker
+  path: '/mqtt'
+};
 
   let esp32Online = false;
   let activeMode = null; // 'system', 'mic', or null
