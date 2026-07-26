@@ -118,14 +118,16 @@
 
   const options = {
   protocol: 'wss',
-  hostname: 'broker.hivemq.com', // 'host' also works in MQTT.js
+  hostname: 'broker.hivemq.com',
   port: 8884,
   path: '/mqtt',
-  clientId: 'web_client_' + Math.random().toString(16).substring(2, 8) // Prevents client ID collisions
+  clean: true,
+  connectTimeout: 4000,
+  clientId: 'web_client_' + Math.random().toString(16).substring(2, 8)
 };
 
 const client = mqtt.connect(options);
-
+  
   let esp32Online = false;
   let activeMode = null; // 'system', 'mic', or null
   let audioContext = null;
