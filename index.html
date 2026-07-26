@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ESP32 Audio Controller</title>
+  <title>ESP32 Dual-Mode Audio Controller</title>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     :root {
@@ -60,7 +60,7 @@
   <!-- Status Bar -->
   <div class="status-bar">
     <div><span id="status-dot" class="dot"></span><span id="status-text">ESP32 Offline</span></div>
-    <div id="mode-badge">Standby</div>
+    <div id="mode-badge" style="font-weight: bold; color: #3b82f6;">URL Stream Mode</div>
   </div>
 
   <!-- Track Information -->
@@ -69,13 +69,12 @@
     <div id="play-status" class="track-status">Disconnected</div>
   </div>
 
-  <!-- Song URL / Search Field -->
+  <!-- MODE 1: Music URL Streaming UI -->
   <div class="search-box">
     <input type="text" id="songQuery" placeholder="Paste YouTube link or song name..." disabled>
     <button class="btn btn-submit" id="submit-btn" onclick="playSong()" disabled>Play Track</button>
   </div>
 
-  <!-- Playback Controls -->
   <div class="controls">
     <button class="btn" id="prev-btn" onclick="sendCmd('prev')" title="Previous" disabled>
       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
@@ -88,18 +87,17 @@
     </button>
   </div>
 
-  <!-- Volume Control -->
   <div class="slider-group">
     <svg width="20" height="20" viewBox="0 0 24 24" fill="#94a3b8"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
     <input type="range" id="volume-slider" min="0" max="100" value="70" onchange="setVolume(this.value)" disabled>
     <span id="vol-val" style="width: 32px; font-size: 0.85rem; color: var(--text-muted)">70%</span>
   </div>
 
-  <!-- Live Microphone Section -->
+  <!-- MODE 2: Live System Audio Stream UI -->
   <div class="live-call-section">
-    <button id="call-btn" class="btn btn-call" onclick="toggleCall()" disabled>
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
-      <span id="call-text">Start Live Mic Call</span>
+    <button id="call-btn" class="btn btn-call" onclick="toggleSystemAudioStream()" disabled>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+      <span id="call-text">Stream Phone System Audio</span>
     </button>
   </div>
 </div>
@@ -108,23 +106,24 @@
   // Shared MQTT Topics
   const mqttCmdTopic = "my_client_home_system_1234/command";
   const mqttStatusTopic = "my_client_home_system_1234/status";
+  const mqttAudioTopic = "my_client_home_system_1234/audio";
   
-  // Array of public Piped instances to handle CORS/rate limits
   const pipedInstances = [
-    "https://pipedapi.drgns.space",
-    "https://pipedapi.adminforge.de",
-    "https://pipedapi.privacydev.net",
-    "https://pipedapi.kavin.rocks"
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.leptons.xyz",
+    "https://pipedapi.mha.fi",
+    "https://api.piped.yt"
   ];
 
-  // Port 8884 is the correct encrypted WSS port for HiveMQ Cloud/Public Broker
+  // Port 8884 WSS Connection for HiveMQ
   const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
   let esp32Online = false;
   let isPlaying = false;
-  let isCalling = false;
-  let mediaRecorder = null;
-  let audioChunks = [];
+  let isStreamingSystemAudio = false;
+  let audioContext = null;
+  let mediaStream = null;
+  let scriptProcessor = null;
 
   const playIcon = '<path d="M8 5v14l11-7z"/>';
   const pauseIcon = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
@@ -176,6 +175,7 @@
     client.publish(mqttCmdTopic, payload);
   }
 
+  // --- MODE 1: URL MUSIC SYSTEM LOGIC ---
   function togglePlay() {
     isPlaying = !isPlaying;
     document.getElementById('play-icon').innerHTML = isPlaying ? pauseIcon : playIcon;
@@ -194,19 +194,20 @@
     return (match && match[2].length === 11) ? match[2] : null;
   }
 
-  // Helper function to query backup Piped servers automatically
   async function fetchFromPiped(endpoint) {
     for (const baseUrl of pipedInstances) {
       try {
         let res = await fetch(`${baseUrl}${endpoint}`);
-        if (res.ok) {
-          return await res.json();
-        }
-      } catch (e) {
-        console.warn(`Piped instance ${baseUrl} failed, trying next...`);
-      }
+        if (res.ok) return await res.json();
+      } catch (e) {}
+
+      try {
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(baseUrl + endpoint)}`;
+        let res = await fetch(proxyUrl);
+        if (res.ok) return await res.json();
+      } catch (e) {}
     }
-    throw new Error("All available Piped API instances failed or were blocked by CORS.");
+    throw new Error("All available Piped instances failed.");
   }
 
   async function playSong() {
@@ -225,14 +226,13 @@
       }
 
       let streamData = await fetchFromPiped(`/streams/${videoId}`);
-
       let m4aStreams = streamData.audioStreams.filter(s => s.format === "M4A" || s.mimeType.includes("audio/mp4"));
       let targetStreams = m4aStreams.length > 0 ? m4aStreams : streamData.audioStreams;
       targetStreams.sort((a, b) => a.bitrate - b.bitrate);
 
       const streamUrl = targetStreams[0].url;
       document.getElementById('song-title').innerText = streamData.title;
-      document.getElementById('play-status').innerText = "Playing";
+      document.getElementById('play-status').innerText = "Playing URL Stream";
       isPlaying = true;
       document.getElementById('play-icon').innerHTML = pauseIcon;
 
@@ -240,56 +240,90 @@
 
     } catch (err) {
       console.error(err);
-      alert("Error resolving stream link. Check DevTools console.");
+      alert("Error resolving stream link.");
       document.getElementById('play-status').innerText = "Error";
     }
   }
 
-  async function toggleCall() {
+  // --- MODE 2: SYSTEM AUDIO STREAM LOGIC ---
+  async function toggleSystemAudioStream() {
     if (!esp32Online) return;
     const callBtn = document.getElementById('call-btn');
     const callText = document.getElementById('call-text');
     const modeBadge = document.getElementById('mode-badge');
 
-    if (!isCalling) {
+    if (!isStreamingSystemAudio) {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
-
-        mediaRecorder.ondataavailable = event => {
-          if (event.data.size > 0) {
-            audioChunks.push(event.data);
-            const reader = new FileReader();
-            reader.readAsDataURL(event.data);
-            reader.onloadend = () => {
-              sendCmd('mic_chunk', reader.result);
-            };
+        // Request System / Screen / Tab Audio capture
+        mediaStream = await navigator.mediaDevices.getDisplayMedia({
+          video: true, // Required by specification for getDisplayMedia
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
           }
+        });
+
+        // Verify user selected an audio track in the prompt
+        const audioTracks = mediaStream.getAudioTracks();
+        if (audioTracks.length === 0) {
+          mediaStream.getTracks().forEach(t => t.stop());
+          return alert("System audio stream failed! Make sure to check the 'Share Audio' option in the prompt.");
+        }
+
+        // Downsample System Audio stream to 8,000 Hz 16-bit PCM for low bitrate (~128kbps)
+        audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 });
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        scriptProcessor = audioContext.createScriptProcessor(1024, 1, 1);
+
+        scriptProcessor.onaudioprocess = (e) => {
+          if (!isStreamingSystemAudio) return;
+
+          const inputData = e.inputBuffer.getChannelData(0);
+          const pcm16 = new Int16Array(inputData.length);
+
+          for (let i = 0; i < inputData.length; i++) {
+            let s = Math.max(-1, Math.min(1, inputData[i]));
+            pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+          }
+
+          // Publish system audio binary PCM frames over MQTT
+          client.publish(mqttAudioTopic, new Uint8Array(pcm16.buffer), { qos: 0 });
         };
 
-        mediaRecorder.start(250);
+        source.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
 
-        isCalling = true;
+        // Auto stop if user clicks browser "Stop Sharing" floating toolbar
+        mediaStream.getVideoTracks()[0].onended = () => {
+          if (isStreamingSystemAudio) toggleSystemAudioStream();
+        };
+
+        // Notify ESP32 to switch mode
+        sendCmd('mode', 'system_audio');
+
+        isStreamingSystemAudio = true;
         callBtn.classList.add('active');
-        callText.innerText = 'End Live Call';
-        modeBadge.innerText = 'Live Call Active';
-        sendCmd('mode', 'mic');
+        callText.innerText = 'Stop System Audio Stream';
+        modeBadge.innerText = 'System Audio Mode';
+        modeBadge.style.color = '#ef4444';
 
       } catch (err) {
-        alert("Microphone permission was denied or is unsupported.");
+        alert("System Audio Capture was canceled or is unsupported on this browser.");
+        console.error(err);
       }
     } else {
-      if (mediaRecorder && mediaRecorder.state !== "inactive") {
-        mediaRecorder.stop();
-        mediaRecorder.stream.getTracks().forEach(track => track.stop());
-      }
-      
-      isCalling = false;
+      if (scriptProcessor) scriptProcessor.disconnect();
+      if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+      if (audioContext) audioContext.close();
+
+      sendCmd('mode', 'url_stream');
+
+      isStreamingSystemAudio = false;
       callBtn.classList.remove('active');
-      callText.innerText = 'Start Live Mic Call';
-      modeBadge.innerText = 'Music Mode';
-      sendCmd('mode', 'music');
+      callText.innerText = 'Stream Phone System Audio';
+      modeBadge.innerText = 'URL Stream Mode';
+      modeBadge.style.color = '#3b82f6';
     }
   }
 </script>
